@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="300">
+  <text x="20" y="30">Protocolo (resumen):</text>
+  <text x="20" y="60">1) Cliente -> Worker TCP: JSON header {'filename', 'size'} + raw bytes</text>
+  <text x="20" y="90">2) Worker (follower) -> responds REDIRECT if not leader</text>
+  <text x="20" y="120">3) If leader: leader calls Raft.replicate(command) where command includes base64(file)</text>
+  <text x="20" y="150">4) Leader sends AppendEntries RPC (JSON over TCP with newline) to peers</text>
+  <text x="20" y="180">5) On majority ack leader commits and persists file to storage and responds OK to client</text>
+</svg>
