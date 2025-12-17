@@ -130,3 +130,57 @@ Contacto y próximos pasos
 
 ---
 Documento generado automáticamente dentro del repositorio. Si desea un PDF listo para entrega, puedo convertirlo y añadir `Informe.pdf` y `Presentacion.pdf` basados en la plantilla.
+
+**Cambios recientes y ejecución en la nueva versión**
+- El repositorio ahora incluye implementaciones y herramientas adicionales: un worker en Kotlin (carpeta `kotlin/`), un worker en Go (`go/`) y utilidades nuevas en `src/` como `train_client.py` y `test_client.py`.
+- El worker Python soporta ahora RPCs JSON con tipos: `TRAIN`, `PREDICT`, `LIST_MODELS` y mantiene compatibilidad con el formato `PUT` heredado para subir archivos binarios.
+
+**Nuevos clientes y ejemplos de uso**
+- Enviar datos para entrenamiento (archivo CSV o inline):
+```powershell
+python -m src.train_client --host 127.0.0.1 --port 9000 train inputs.csv outputs.csv
+# o para pruebas rápidas inline:
+python -m src.train_client --host 127.0.0.1 --port 9000 train-inline "0,0;0,1;1,0;1,1" "0;1;1;0"
+```
+- Listar modelos y pedir predicción:
+```powershell
+python -m src.test_client --host 127.0.0.1 --port 9000 list
+python -m src.test_client --host 127.0.0.1 --port 9000 predict <model_id> 1,0,1,0
+```
+- El cliente legacy para subir ficheros sigue disponible:
+```powershell
+python -m src.client --host 127.0.0.1 --port 9000 put .\archivo.txt
+```
+
+**Workers en varios lenguajes (build / run)**
+- Worker Python (sin build):
+```powershell
+python -m src.worker --host 127.0.0.1 --port 9000 --monitor-port 8000 --raft-port 10000 --peers 127.0.0.1:9001 127.0.0.1:9002 --storage-dir .\node0_storage
+```
+- Worker Go (desde `go/`):
+```powershell
+cd go
+go run . --host 127.0.0.1 --port 9002 --monitor-port 8002 --raft-port 10002 --peers 127.0.0.1:9000 127.0.0.1:9001
+```
+- Worker Kotlin (usar Gradle o jar en `kotlin/`):
+```powershell
+cd kotlin
+gradle build
+java -jar build\libs\worker-kotlin-1.0.jar --host 127.0.0.1 --port 9001 --monitor-port 8001 --raft-port 10001 --peers 127.0.0.1:9000 127.0.0.1:9002
+```
+
+**Compilar / preparar módulo Java de entrenamiento**
+- Asegúrese de compilar `TrainingModule.java` (y `NeuralNetwork.java` si existe) en la carpeta `java/`:
+```powershell
+cd java
+javac TrainingModule.java NeuralNetwork.java
+cd ..
+```
+El worker invoca `java -cp java TrainingModule ...` para entrenamiento y predicción.
+
+**Resumen del flujo actualizado**
+- El monitor HTTP ahora expone `/status` (estado RAFT), `/models` (lista modelos) y `/logs`.
+- Para entrenar: el cliente `train_client` envía un JSON `{'type':'TRAIN', 'inputs': [...], 'outputs': [...]}` al worker; el leader ejecuta el entrenamiento (invocando Java), registra el `model_id`, replica la entrada via Raft y guarda el archivo de modelo en `--storage-dir/models`.
+- Para predecir: `test_client` envía `{'type':'PREDICT', 'model_id':..., 'input': [...]}` y el worker ejecuta `TrainingModule predict` y devuelve `{'status':'OK','output':[...]]}`.
+
+Si quieres, actualizo también los ejemplos concretos en la parte inicial del documento (comandos por línea) para mostrar cómo levantar un clúster mixto Python/Go/Kotlin paso a paso.

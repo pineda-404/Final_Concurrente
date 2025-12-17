@@ -87,3 +87,16 @@ Ver monitor del worker (logs):
 
 Open http://127.0.0.1:8000/logs in a browser to see replication logs.
 
+---
+
+## 📚 Documentación Adicional
+
+Para un análisis completo del proyecto, mejoras sugeridas y guías detalladas, consulta:
+
+- **[Verificación de Requisitos del PDF](docs/VERIFICACION_REQUISITOS_PDF.md)** ⭐ - Análisis de cumplimiento según el enunciado
+- **[Análisis Completo del Proyecto](docs/ANALISIS_PROYECTO.md)** - Análisis exhaustivo, mejoras y funcionalidades faltantes
+- **[Resumen Ejecutivo](docs/RESUMEN_EJECUTIVO.md)** - Resumen rápido del estado actual
+- **[Checklist del Proyecto](docs/CHECKLIST_PROYECTO.md)** - Lista de verificación de componentes
+- **[Flujo de Ejecución](docs/EXECUTION_FLOW.md)** - Guía paso a paso para ejecutar el sistema
+- **[Contexto Técnico](docs/TECHNICAL_CONTEXT.md)** - Arquitectura y diseño del sistema
+

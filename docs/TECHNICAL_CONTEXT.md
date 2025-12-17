@@ -77,7 +77,7 @@ Sistema distribuido para entrenamiento y consumo de modelos de IA (redes neurona
 ### Cluster heterogéneo (Python + Go + Kotlin):
 ```bash
 # Python (Terminal 1)
-python3 -m src.worker --host 127.0.0.1 --port 9000 --monitor-port 8000 --raft-port 10000 --peers 127.0.0.1:9001,127.0.0.1:9002
+python -m src.worker --host 127.0.0.1 --port 9000 --monitor-port 8000 --raft-port 10000 --peers 127.0.0.1:9001,127.0.0.1:9002
 
 # Go (Terminal 2)
 ./go/worker --host 127.0.0.1 --port 9001 --monitor-port 8001 --raft-port 10001 --peers 127.0.0.1:9000,127.0.0.1:9002
@@ -88,9 +88,9 @@ java -jar kotlin/worker.jar --host 127.0.0.1 --port 9002 --monitor-port 8002 --r
 
 ### Entrenar y predecir:
 ```bash
-python3 -m src.train_client train-inline "0,0;0,1;1,0;1,1" "0;1;1;0"
-python3 -m src.test_client list
-python3 -m src.test_client predict <model_id> 1,0
+python -m src.train_client train-inline "0,0;0,1;1,0;1,1" "0;1;1;0"
+python -m src.test_client list
+python -m src.test_client predict <model_id> 1,0
 ```
 
 ---
