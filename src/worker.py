@@ -832,8 +832,10 @@ def main():
         port=args.raft_port,
         peers=raft_peers,
         worker_port=args.port,
-        apply_callback=apply_raft_command
+        apply_callback=apply_raft_command,
+        persistence_path=STORAGE_DIR
     )
+
     raft_node.start()
 
     log(f"Worker started with DISTRIBUTED TRAINING support")

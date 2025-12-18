@@ -4,6 +4,7 @@ import json
 import time
 import random
 import base64
+import os
 from typing import List, Tuple
 
 # Minimal Raft-like implementation for log replication (demonstration only).
@@ -16,7 +17,7 @@ APPEND_RESPONSE = 'APPEND_RESPONSE'
 
 
 class RaftNode:
-    def __init__(self, node_id: str, host: str, port: int, peers: List[Tuple[str,int]], worker_port: int = None, apply_callback=None):
+    def __init__(self, node_id: str, host: str, port: int, peers: List[Tuple[str,int]], worker_port: int = None, apply_callback=None, persistence_path: str = None):
         self.id = node_id
         self.host = host
         self.port = port
@@ -24,7 +25,10 @@ class RaftNode:
         # port where the worker/file-server listens (used for leader redirect)
         self.worker_port = worker_port
 
-        # persistent state
+        # persistence path for state
+        self.persistence_path = persistence_path
+
+        # persistent state (will be loaded from disk if available)
         self.current_term = 0
         self.voted_for = None
         self.log = []  # list of {'term':t,'command':...}
@@ -54,9 +58,54 @@ class RaftNode:
         # for waiting replication
         self._replicate_cv = threading.Condition()
 
+        # Load persisted state if available
+        self._load_state()
+
+    def _get_state_file(self):
+        """Get path to state file."""
+        if self.persistence_path:
+            return os.path.join(self.persistence_path, 'raft_state.json')
+        return None
+
+    def _save_state(self):
+        """Save persistent state (term, votedFor, log) to disk."""
+        state_file = self._get_state_file()
+        if not state_file:
+            return
+        try:
+            os.makedirs(os.path.dirname(state_file), exist_ok=True)
+            state = {
+                'current_term': self.current_term,
+                'voted_for': self.voted_for,
+                'log': self.log
+            }
+            # Write atomically using temp file
+            temp_file = state_file + '.tmp'
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                json.dump(state, f)
+            os.replace(temp_file, state_file)
+        except Exception as e:
+            print(f"RAFT: Error saving state: {e}")
+
+    def _load_state(self):
+        """Load persistent state from disk if available."""
+        state_file = self._get_state_file()
+        if not state_file or not os.path.exists(state_file):
+            return
+        try:
+            with open(state_file, 'r', encoding='utf-8') as f:
+                state = json.load(f)
+            self.current_term = state.get('current_term', 0)
+            self.voted_for = state.get('voted_for', None)
+            self.log = state.get('log', [])
+            print(f"RAFT: Loaded state from disk (term={self.current_term}, log_len={len(self.log)})")
+        except Exception as e:
+            print(f"RAFT: Error loading state: {e}")
+
     def start(self):
         self.server_thread.start()
         self.reset_election_timeout()
+
 
     def stop(self):
         self.stopped = True
@@ -74,6 +123,7 @@ class RaftNode:
             self.state = 'candidate'
             self.current_term += 1
             self.voted_for = self.id
+            self._save_state()  # Persist term and vote
             term = self.current_term
             votes = 1
 
@@ -175,14 +225,19 @@ class RaftNode:
         term = msg.get('term', 0)
         candidate = msg.get('candidate_id')
         with self.lock:
+            state_changed = False
             if term > self.current_term:
                 self.current_term = term
                 self.voted_for = None
                 self.state = 'follower'
+                state_changed = True
             vote_granted = False
             if (self.voted_for is None or self.voted_for == candidate) and term >= self.current_term:
                 self.voted_for = candidate
                 vote_granted = True
+                state_changed = True
+            if state_changed:
+                self._save_state()  # Persist term and vote
             self.reset_election_timeout()
         return {'type': VOTE_RESPONSE, 'term': self.current_term, 'vote_granted': vote_granted}
 
@@ -194,8 +249,11 @@ class RaftNode:
         prev_log_term = msg.get('prev_log_term', 0)
         leader_commit = msg.get('leader_commit', -1)
         with self.lock:
+            state_changed = False
             if term >= self.current_term:
-                self.current_term = term
+                if term > self.current_term:
+                    self.current_term = term
+                    state_changed = True
                 self.state = 'follower'
                 # interpret leader id (may contain worker port)
                 if isinstance(leader_id, list) and len(leader_id) == 2:
@@ -215,14 +273,21 @@ class RaftNode:
                 insert_at = prev_log_index + 1
                 if insert_at < len(self.log):
                     self.log = self.log[:insert_at]
+                    state_changed = True
 
                 # append new entries
-                for e in entries:
-                    self.log.append(e)
+                if entries:
+                    for e in entries:
+                        self.log.append(e)
+                    state_changed = True
 
                 # update commit index
                 if leader_commit > self.commit_index:
                     self.commit_index = min(leader_commit, len(self.log) - 1)
+
+                # save state if changed
+                if state_changed:
+                    self._save_state()
 
                 # apply committed entries to state machine if callback provided
                 try:
@@ -234,6 +299,7 @@ class RaftNode:
                 return {'type': APPEND_RESPONSE, 'term': self.current_term, 'success': True, 'last_index': len(self.log) - 1}
             else:
                 return {'type': APPEND_RESPONSE, 'term': self.current_term, 'success': False}
+
 
     def _send_rpc(self, peer, msg, timeout=2.0):
         host, port = peer
@@ -277,12 +343,14 @@ class RaftNode:
             entry = {'term': self.current_term, 'command': command}
             # append locally (optimistic)
             self.log.append(entry)
+            self._save_state()  # Persist log change
             my_index = len(self.log) - 1
 
             # ensure next_index exists for peers
             for p in self.peers:
                 if p not in self.next_index:
                     self.next_index[p] = len(self.log)
+
 
         # send append_entries to peers and update next_index/match_index
         acks = 1
