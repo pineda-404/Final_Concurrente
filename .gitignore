@@ -42,3 +42,8 @@ benchmark_files/
 go/worker
 kotlin/worker.jar
 node*_storage/
+
+# Kotlin
+.gradle/
+kotlin/.gradle/
+
