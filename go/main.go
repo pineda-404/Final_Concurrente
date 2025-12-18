@@ -119,13 +119,17 @@ func main() {
 				return
 			}
 			
-			logMsg("RAFT applied STORE_FILE: wrote %s (%d bytes)", path, len(data))
+		logMsg("RAFT applied STORE_FILE: wrote %s (%d bytes)", path, len(data))
 		} else {
 			logMsg("RAFT applied command: %v", cmd)
 		}
 	})
 
+	// Set persistence path for RAFT state
+	raftNode.SetPersistencePath(storageDir)
+
 	go raftNode.Start()
+
 
 	logMsg("Worker started: host=%s, port=%d, raft_port=%d", *host, *port, *raftPort)
 	logMsg("Storage: %s, Models: %s", storageDir, modelsDir)

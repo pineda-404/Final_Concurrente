@@ -95,8 +95,12 @@ fun main(args: Array<String>) {
             log("RAFT applied command: $cmd")
         }
     }
+
+    // Set persistence path for RAFT state
+    raftNode.persistencePath = storageDir
     
     thread { raftNode.start() }
+
 
     log("Worker started: host=$host, port=$port, raft_port=$raftPort")
     log("Storage: $storageDir, Models: $modelsDir")

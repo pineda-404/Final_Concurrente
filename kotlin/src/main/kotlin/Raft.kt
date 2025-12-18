@@ -58,6 +58,53 @@ class RaftNode(
     // Callback for applying committed entries
     var applyCallback: ((Map<String, Any?>) -> Unit)? = null
 
+    // Persistence
+    var persistencePath: String? = null
+
+    private fun saveState() {
+        val path = persistencePath ?: return
+        try {
+            val dir = java.io.File(path)
+            dir.mkdirs()
+            val stateFile = java.io.File(dir, "raft_state.json")
+            val state = mapOf(
+                "current_term" to currentTerm,
+                "voted_for" to votedFor,
+                "log" to log.map { mapOf("term" to it.term, "command" to it.command) }
+            )
+            val tempFile = java.io.File(dir, "raft_state.json.tmp")
+            tempFile.writeText(toJson(state))
+            tempFile.renameTo(stateFile)
+        } catch (e: Exception) {
+            log("RAFT: Error saving state: ${e.message}")
+        }
+    }
+
+    private fun loadState() {
+        val path = persistencePath ?: return
+        try {
+            val stateFile = java.io.File(path, "raft_state.json")
+            if (!stateFile.exists()) return
+            val state = parseJson(stateFile.readText())
+            synchronized(lock) {
+                currentTerm = (state["current_term"] as? Number)?.toInt() ?: 0
+                votedFor = state["voted_for"] as? String
+                @Suppress("UNCHECKED_CAST")
+                val logEntries = state["log"] as? List<Map<String, Any?>> ?: emptyList()
+                log.clear()
+                for (entry in logEntries) {
+                    val term = (entry["term"] as? Number)?.toInt() ?: 0
+                    @Suppress("UNCHECKED_CAST")
+                    val cmd = entry["command"] as? Map<String, Any?> ?: emptyMap()
+                    log.add(LogEntry(term, cmd))
+                }
+            }
+            log("RAFT: Loaded state from disk (term=$currentTerm, log_len=${log.size})")
+        } catch (e: Exception) {
+            log("RAFT: Error loading state: ${e.message}")
+        }
+    }
+
     private fun applyCommitted() {
         while (lastApplied < commitIndex) {
             lastApplied++
@@ -72,9 +119,11 @@ class RaftNode(
     }
 
     fun start() {
+        loadState()
         thread { startRpcServer() }
         resetElectionTimeout()
     }
+
 
     fun stop() {
         stopped = true
@@ -94,8 +143,10 @@ class RaftNode(
             state = "candidate"
             currentTerm++
             votedFor = id
+            saveState() // Persist term and vote
         }
         val term = currentTerm
+
 
         log("Starting election for term $term")
 
@@ -184,6 +235,7 @@ class RaftNode(
 
             val entry = LogEntry(currentTerm, command)
             log.add(entry)
+            saveState() // Persist log change
         }
 
         val myIndex = log.size - 1
@@ -268,15 +320,18 @@ class RaftNode(
                 currentTerm = term
                 votedFor = null
                 state = "follower"
+                saveState() // Persist term change
             }
 
             val voteGranted = (votedFor == null || votedFor == candidateId) && term >= currentTerm
             if (voteGranted) {
                 votedFor = candidateId
+                saveState() // Persist vote
                 log("Voted for $candidateId in term $term")
             }
 
             resetElectionTimeout()
+
 
             return mapOf(
                 "type" to "VOTE_RESPONSE",
@@ -304,6 +359,7 @@ class RaftNode(
                 }
 
                 // Append entries if present
+                var stateChanged = term > currentTerm
                 @Suppress("UNCHECKED_CAST")
                 val entries = msg["entries"] as? List<Map<String, Any?>> ?: emptyList()
                 for (entry in entries) {
@@ -311,6 +367,7 @@ class RaftNode(
                     @Suppress("UNCHECKED_CAST")
                     val cmd = entry["command"] as? Map<String, Any?> ?: emptyMap()
                     log.add(LogEntry(entryTerm, cmd))
+                    stateChanged = true
                 }
 
                 // Update commit index
@@ -319,7 +376,13 @@ class RaftNode(
                     applyCommitted()
                 }
 
+                // Persist state if changed
+                if (stateChanged) {
+                    saveState()
+                }
+
                 resetElectionTimeout()
+
 
                 return mapOf(
                     "type" to "APPEND_RESPONSE",
